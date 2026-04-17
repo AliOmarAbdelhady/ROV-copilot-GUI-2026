@@ -1,0 +1,85 @@
+/* ROV Copilot - Custom Styles */
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Map styles */
+#map {
+    border-radius: 0 0 0.5rem 0.5rem;
+}
+
+.platform-marker {
+    background: transparent !important;
+    border: none !important;
+}
+
+.iceberg-marker {
+    background: transparent !important;
+    border: none !important;
+}
+
+/* Leaflet popup customization */
+.leaflet-popup-content-wrapper {
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.leaflet-popup-content {
+    margin: 10px 14px !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Card hover effect */
+.card {
+    transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Table row hover */
+tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+/* Input focus animation */
+input:focus {
+    transition: box-shadow 0.15s ease;
+}
+
+/* Button transitions */
+button {
+    transition: all 0.15s ease;
+}
+
+/* Number input - remove spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
+}

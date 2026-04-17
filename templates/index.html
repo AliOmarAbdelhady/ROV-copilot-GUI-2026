@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="flex flex-col lg:flex-row gap-4 p-4">
+
+    <!-- Left Panel: Map -->
+    <div class="lg:w-3/5 flex flex-col gap-4">
+        <!-- Map Card -->
+        <div class="card rounded-lg border border-border bg-card shadow-sm">
+            <div class="px-4 py-3 border-b border-border">
+                <h2 class="text-sm font-semibold text-foreground">Operations Map</h2>
+                <p class="text-xs text-muted-foreground">Oil platforms, icebergs, and threat zones</p>
+            </div>
+            <div id="map" class="w-full" style="height: 520px;"></div>
+        </div>
+
+        <!-- Threat Matrix -->
+        <div class="card rounded-lg border border-border bg-card shadow-sm">
+            <div class="px-4 py-3 border-b border-border">
+                <h2 class="text-sm font-semibold text-foreground">Threat Matrix</h2>
+                <p class="text-xs text-muted-foreground">Platform vs Subsea threat assessment</p>
+            </div>
+            <div class="p-4 overflow-x-auto">
+                <table id="threat-matrix" class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-border">
+                            <th class="text-left py-2 px-3 text-muted-foreground font-medium">Iceberg</th>
+                            <th class="text-center py-2 px-3 text-muted-foreground font-medium" colspan="2">Hibernia</th>
+                            <th class="text-center py-2 px-3 text-muted-foreground font-medium" colspan="2">Sea Rose</th>
+                            <th class="text-center py-2 px-3 text-muted-foreground font-medium" colspan="2">Terra Nova</th>
+                            <th class="text-center py-2 px-3 text-muted-foreground font-medium" colspan="2">Hebron</th>
+                        </tr>
+                        <tr class="border-b border-border text-xs text-muted-foreground">
+                            <th></th>
+                            <th class="py-1 px-3 font-normal">Plat.</th>
+                            <th class="py-1 px-3 font-normal">Sub.</th>
+                            <th class="py-1 px-3 font-normal">Plat.</th>
+                            <th class="py-1 px-3 font-normal">Sub.</th>
+                            <th class="py-1 px-3 font-normal">Plat.</th>
+                            <th class="py-1 px-3 font-normal">Sub.</th>
+                            <th class="py-1 px-3 font-normal">Plat.</th>
+                            <th class="py-1 px-3 font-normal">Sub.</th>
+                        </tr>
+                    </thead>
+                    <tbody id="threat-matrix-body">
+                        <tr><td colspan="9" class="text-center py-8 text-muted-foreground">Loading threat data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Dashboard -->
+    <div class="lg:w-2/5 flex flex-col gap-4">
+
+        <!-- Threat Summary Cards -->
+        <div class="grid grid-cols-3 gap-3">
+            <div class="card rounded-lg border border-red-500/30 bg-card p-4 text-center">
+                <div id="count-red" class="text-3xl font-bold text-red-500">-</div>
+                <div class="text-xs font-medium text-muted-foreground mt-1">RED</div>
+            </div>
+            <div class="card rounded-lg border border-yellow-500/30 bg-card p-4 text-center">
+                <div id="count-yellow" class="text-3xl font-bold text-yellow-500">-</div>
+                <div class="text-xs font-medium text-muted-foreground mt-1">YELLOW</div>
+            </div>
+            <div class="card rounded-lg border border-green-500/30 bg-card p-4 text-center">
+                <div id="count-green" class="text-3xl font-bold text-green-500">-</div>
+                <div class="text-xs font-medium text-muted-foreground mt-1">GREEN</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="card rounded-lg border border-border bg-card shadow-sm">
+            <div class="px-4 py-3 border-b border-border">
+                <h2 class="text-sm font-semibold text-foreground">Threat Distribution</h2>
+            </div>
+            <div class="p-4">
+                <canvas id="chart-pie" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="card rounded-lg border border-border bg-card shadow-sm">
+            <div class="px-4 py-3 border-b border-border">
+                <h2 class="text-sm font-semibold text-foreground">Per-Platform Breakdown</h2>
+            </div>
+            <div class="p-4">
+                <canvas id="chart-bar" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Iceberg Management -->
+        <div class="card rounded-lg border border-border bg-card shadow-sm">
+            <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold text-foreground">Icebergs</h2>
+                    <p class="text-xs text-muted-foreground">Manage iceberg positions</p>
+                </div>
+                <button id="btn-toggle-form" class="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors">
+                    + Add Iceberg
+                </button>
+            </div>
+
+            <!-- Add Iceberg Form (hidden by default) -->
+            <div id="iceberg-form" class="hidden border-b border-border p-4">
+                <form id="form-add-iceberg" class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <label class="text-xs font-medium text-muted-foreground">Name</label>
+                        <input type="text" name="name" required placeholder="e.g. Iceberg G"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground">Latitude</label>
+                        <input type="number" step="0.0001" name="latitude" required placeholder="47.5000" min="-90" max="90"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground">Longitude</label>
+                        <input type="number" step="0.0001" name="longitude" required placeholder="-48.5000" min="-180" max="180"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground">Heading (deg)</label>
+                        <input type="number" step="1" name="heading" required placeholder="180" min="0" max="360"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground">Keel Depth (m)</label>
+                        <input type="number" step="1" name="keel_depth_m" required placeholder="80" min="1"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div class="col-span-2 flex gap-2 justify-end">
+                        <button type="button" id="btn-cancel-form" class="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent transition-colors">Cancel</button>
+                        <button type="submit" class="rounded-md bg-primary text-primary-foreground px-4 py-1.5 text-sm font-medium hover:bg-primary/90 transition-colors">Add</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Iceberg List -->
+            <div class="p-2 max-h-64 overflow-y-auto">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="text-muted-foreground">
+                            <th class="text-left py-1.5 px-2 font-medium">Name</th>
+                            <th class="text-right py-1.5 px-2 font-medium">Lat</th>
+                            <th class="text-right py-1.5 px-2 font-medium">Lon</th>
+                            <th class="text-right py-1.5 px-2 font-medium">Hdg</th>
+                            <th class="text-right py-1.5 px-2 font-medium">Keel</th>
+                            <th class="py-1.5 px-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="iceberg-list-body">
+                        <tr><td colspan="6" class="text-center py-4 text-muted-foreground">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
