@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Frequency Mission{% endblock %}
+
+{% block content %}
+<div class="p-4 md:p-6">
+    <div class="mx-auto flex max-w-7xl flex-col gap-4">
+        <section class="frequency-hero card overflow-hidden rounded-2xl border border-border shadow-sm">
+            <div class="grid gap-5 px-5 py-5 lg:grid-cols-[1.4fr_0.9fr] lg:px-6">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300/80">Frequency Mission</p>
+                    <h2 class="mt-2 text-2xl font-semibold text-foreground md:text-3xl">Enter the number seen and the frequency updates instantly.</h2>
+                    <p class="mt-3 max-w-2xl text-sm text-slate-300/80">
+                        Built for fast mission entry: type in the <b>Number Seen</b> column, press <b>Enter</b> to jump to the next row,
+                        or paste a full list of values in one shot.
+                    </p>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                    <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Total Seen</div>
+                        <div id="total-seen" class="mt-2 text-3xl font-semibold text-white">0</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Rows Filled</div>
+                        <div id="rows-filled" class="mt-2 text-3xl font-semibold text-white">0 / {{ frequency_species|length }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Formula</div>
+                        <div class="mt-2 text-sm font-medium text-white">frequency = number seen / total seen</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
+            <section class="card rounded-2xl border border-border bg-card shadow-sm">
+                <div class="flex flex-col gap-3 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h3 class="text-sm font-semibold text-foreground">Species Table</h3>
+                        <p class="text-xs text-muted-foreground">Arrow keys or Enter move between inputs. Pasting multiple numbers fills rows automatically.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="btn-clear-frequency" type="button" class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent transition-colors">
+                            Clear
+                        </button>
+                        <button id="btn-copy-frequency-lines" type="button" class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                            Copy Output
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="frequency-table w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-border text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                                <th class="px-5 py-3">Species</th>
+                                <th class="px-4 py-3 text-center">Number Seen</th>
+                                <th class="px-5 py-3 text-right">Frequency</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for species in frequency_species %}
+                            <tr class="border-b border-border/70 last:border-b-0" data-species-row>
+                                <td class="px-5 py-3 align-middle">
+                                    <div class="font-medium text-foreground">{{ species.name }}</div>
+                                    <div class="text-xs italic text-muted-foreground">{{ species.scientific_name }}</div>
+                                </td>
+                                <td class="px-4 py-3 align-middle">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        inputmode="numeric"
+                                        enterkeyhint="next"
+                                        data-frequency-input
+                                        data-index="{{ loop.index0 }}"
+                                        class="frequency-seen-input mx-auto block w-28 rounded-xl border border-input bg-background px-3 py-3 text-center text-lg font-semibold focus:ring-2 focus:ring-ring focus:outline-none"
+                                        placeholder="0">
+                                </td>
+                                <td class="px-5 py-3 text-right align-middle">
+                                    <div data-frequency-output class="frequency-output-value">0</div>
+                                    <div data-frequency-percent class="text-xs text-muted-foreground">0%</div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <div class="flex flex-col gap-4">
+                <section class="card rounded-2xl border border-border bg-card shadow-sm">
+                    <div class="border-b border-border px-5 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">Quick Paste</h3>
+                        <p class="text-xs text-muted-foreground">Paste 10 numbers separated by spaces, commas, or new lines.</p>
+                    </div>
+                    <div class="p-5">
+                        <textarea
+                            id="quick-counts"
+                            rows="8"
+                            class="w-full rounded-xl border border-input bg-background px-3 py-3 text-sm focus:ring-2 focus:ring-ring focus:outline-none"
+                            placeholder="13&#10;9&#10;6&#10;20&#10;3&#10;19&#10;17&#10;4&#10;7&#10;4"></textarea>
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <p class="text-xs text-muted-foreground">Use this if the judge gives you a full list at once.</p>
+                            <button id="btn-apply-quick-counts" type="button" class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent transition-colors">
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card rounded-2xl border border-border bg-card shadow-sm">
+                    <div class="border-b border-border px-5 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">Output</h3>
+                        <p class="text-xs text-muted-foreground">Ready-to-copy frequency values in row order.</p>
+                    </div>
+                    <div class="p-5">
+                        <textarea
+                            id="frequency-output-lines"
+                            rows="10"
+                            readonly
+                            class="w-full rounded-xl border border-input bg-background px-3 py-3 font-mono text-sm focus:outline-none"></textarea>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/frequency.js') }}"></script>
+{% endblock %}

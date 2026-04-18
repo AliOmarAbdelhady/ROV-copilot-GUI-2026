@@ -1,5 +1,3 @@
-import math
-
 PLATFORMS = [
     {
         "id": "hibernia",
@@ -35,66 +33,70 @@ PLATFORMS = [
     },
 ]
 
-EXAMPLE_ICEBERGS = [
+FREQUENCY_SPECIES = [
     {
-        "id": "A",
-        "name": "Example A",
-        "latitude": 47.65,
-        "longitude": -48.6167,
-        "heading": 158,
-        "keel_depth_m": 99,
-        "is_example": True,
+        "id": "snow_crab",
+        "name": "Snow crab",
+        "scientific_name": "chionecetes opilio",
     },
     {
-        "id": "B",
-        "name": "Example B",
-        "latitude": 47.9667,
-        "longitude": -48.8333,
-        "heading": 180,
-        "keel_depth_m": 78,
-        "is_example": True,
+        "id": "acadian_hermit_crab",
+        "name": "Acadian hermit crab",
+        "scientific_name": "Pagarus acadianus",
     },
     {
-        "id": "C",
-        "name": "Example C",
-        "latitude": 47.8833,
-        "longitude": -47.85,
-        "heading": 188,
-        "keel_depth_m": 112,
-        "is_example": True,
+        "id": "western_atlantic_hairy_hermit_crab",
+        "name": "Western Atlantic Hairy Hermit Crab",
+        "scientific_name": "Pagarus arcuatus",
     },
     {
-        "id": "D",
-        "name": "Example D",
-        "latitude": 47.6667,
-        "longitude": -49.4167,
-        "heading": 152,
-        "keel_depth_m": 60,
-        "is_example": True,
+        "id": "european_green_crab",
+        "name": "European Green Crab",
+        "scientific_name": "Carcinus maenas",
     },
     {
-        "id": "E",
-        "name": "Example E",
-        "latitude": 47.75,
-        "longitude": -48.4833,
-        "heading": 198,
-        "keel_depth_m": 84,
-        "is_example": True,
+        "id": "rock_crab",
+        "name": "Rock Crab",
+        "scientific_name": "Cancer pagurus",
     },
     {
-        "id": "F",
-        "name": "Example F",
-        "latitude": 47.9333,
-        "longitude": -47.75,
-        "heading": 181,
-        "keel_depth_m": 126,
-        "is_example": True,
+        "id": "jonah_crab",
+        "name": "Jonah Crab",
+        "scientific_name": "Cancer borealis",
+    },
+    {
+        "id": "spiny_sunstar",
+        "name": "Spiny Sunstar",
+        "scientific_name": "Crossaster papposus",
+    },
+    {
+        "id": "sea_urchin",
+        "name": "Sea Urchin",
+        "scientific_name": "Stronglyocentrotus droebachiensis",
+    },
+    {
+        "id": "boreal_sea_star",
+        "name": "Boreal Sea Star",
+        "scientific_name": "Boreal asterias",
+    },
+    {
+        "id": "daisy_brittle_star",
+        "name": "Daisy brittle star",
+        "scientific_name": "Ophiopholis aculeata",
     },
 ]
 
-# Threat thresholds in nautical miles
-THREAT_GREEN_THRESHOLD = 10   # > 10 nm = green
-THREAT_YELLOW_THRESHOLD = 5   # 5-10 nm = yellow, < 5 nm = red
+# Surface platform threat thresholds in nautical miles
+THREAT_GREEN_THRESHOLD = 10
+THREAT_YELLOW_THRESHOLD = 5
+
+# 2026 MATE subsea guidance:
+# only tracks within 25 nm are considered for subsea assets, then keel-depth ratio
+# determines the risk band.
+SUBSEA_INTERSECTION_THRESHOLD_NM = 25
+SUBSEA_GROUNDING_RATIO = 1.10
+SUBSEA_RED_RATIO = 0.90
+SUBSEA_YELLOW_RATIO = 0.70
 
 # Nautical mile in meters
 NM_IN_METERS = 1852.0

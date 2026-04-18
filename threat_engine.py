@@ -1,9 +1,12 @@
 import math
 from config import (
     PLATFORMS,
-    EXAMPLE_ICEBERGS,
     THREAT_GREEN_THRESHOLD,
     THREAT_YELLOW_THRESHOLD,
+    SUBSEA_INTERSECTION_THRESHOLD_NM,
+    SUBSEA_GROUNDING_RATIO,
+    SUBSEA_RED_RATIO,
+    SUBSEA_YELLOW_RATIO,
     NM_IN_METERS,
     EARTH_RADIUS_M,
 )
@@ -58,81 +61,111 @@ def angular_difference(a, b):
     return abs(diff)
 
 
-def closest_approach_distance(iceberg, platform):
+def closest_approach_metrics(iceberg, platform):
     """
-    Estimate the closest approach distance in nm of an iceberg to a platform.
-    Projects the iceberg along its heading and finds the closest point.
+    Return forward-track geometry between the iceberg and a platform.
+
+    The competition treats the iceberg track as a forward heading line from the
+    observed point. If the perpendicular intersection falls behind the iceberg,
+    the closest approach is the direct distance instead.
     """
-    dist_direct = distance_nm(iceberg, platform)
+    direct_distance = distance_nm(iceberg, platform)
     bearing_to_platform = bearing_from_to(iceberg, platform)
     angle_diff = angular_difference(iceberg["heading"], bearing_to_platform)
 
-    # If iceberg is heading generally toward the platform (within 90 degrees),
-    # the closest approach is the perpendicular distance
-    if angle_diff < 90:
-        # Closest approach = direct distance * sin(angle)
-        perpendicular_dist = dist_direct * math.sin(math.radians(angle_diff))
-        return perpendicular_dist
+    if direct_distance == 0:
+        return {
+            "closest_distance_nm": 0.0,
+            "direct_distance_nm": 0.0,
+            "bearing_to_platform_deg": bearing_to_platform,
+            "angle_diff_deg": angle_diff,
+            "along_track_distance_nm": 0.0,
+            "intersects_forward": True,
+        }
+
+    angular_distance = (direct_distance * NM_IN_METERS) / EARTH_RADIUS_M
+    track_bearing = math.radians(iceberg["heading"])
+    platform_bearing = math.radians(bearing_to_platform)
+
+    cross_track = math.asin(
+        max(-1.0, min(1.0, math.sin(angular_distance) * math.sin(platform_bearing - track_bearing)))
+    )
+    along_track = math.atan2(
+        math.sin(angular_distance) * math.cos(platform_bearing - track_bearing),
+        math.cos(angular_distance),
+    )
+
+    if along_track < 0:
+        closest_distance = direct_distance
+        along_track_nm = -direct_distance
+        intersects_forward = False
     else:
-        # Iceberg heading away from platform — current position is closest
-        return dist_direct
+        closest_distance = abs(cross_track) * EARTH_RADIUS_M / NM_IN_METERS
+        along_track_nm = along_track * EARTH_RADIUS_M / NM_IN_METERS
+        intersects_forward = True
 
-
-def will_ground(iceberg_keel_m, platform_depth_m):
-    """Check if iceberg will ground before reaching platform depth."""
-    return iceberg_keel_m >= platform_depth_m
+    return {
+        "closest_distance_nm": closest_distance,
+        "direct_distance_nm": direct_distance,
+        "bearing_to_platform_deg": bearing_to_platform,
+        "angle_diff_deg": angle_diff,
+        "along_track_distance_nm": along_track_nm,
+        "intersects_forward": intersects_forward,
+    }
 
 
 def classify_threat(distance):
     """Classify threat level based on distance in nautical miles."""
     if distance < THREAT_YELLOW_THRESHOLD:
         return "red"
-    elif distance < THREAT_GREEN_THRESHOLD:
+    elif distance <= THREAT_GREEN_THRESHOLD:
         return "yellow"
     return "green"
 
 
 def platform_threat(iceberg, platform):
-    """Determine surface platform threat level."""
-    closest_dist = closest_approach_distance(iceberg, platform)
-    return classify_threat(closest_dist), closest_dist
+    """Determine surface platform threat level using the competition rules."""
+    metrics = closest_approach_metrics(iceberg, platform)
+    depth_ratio = iceberg["keel_depth_m"] / platform["depth_m"] if platform["depth_m"] > 0 else 0
+    raw_level = classify_threat(metrics["closest_distance_nm"])
+
+    if depth_ratio >= SUBSEA_GROUNDING_RATIO:
+        note = "iceberg will ground" if raw_level != "green" else ""
+        return "green", metrics, note
+
+    return raw_level, metrics, ""
 
 
 def subsea_threat(iceberg, platform):
     """
-    Determine subsea asset threat level.
-    Considers trajectory intersection, keel depth, and grounding analysis.
+    Determine subsea asset threat level using the 2026 competition rules.
+
+    Any track farther than 25 nm from a platform is not considered a subsea
+    intersection. For intersecting tracks, keel-to-depth ratio drives the level.
     """
-    bearing_to_platform = bearing_from_to(iceberg, platform)
-    angle_diff = angular_difference(iceberg["heading"], bearing_to_platform)
-    closest_dist = closest_approach_distance(iceberg, platform)
+    metrics = closest_approach_metrics(iceberg, platform)
+    depth_ratio = iceberg["keel_depth_m"] / platform["depth_m"] if platform["depth_m"] > 0 else 0
+    notes = []
 
-    if angle_diff > 90:
-        return "green", "does not intersect"
+    if metrics["closest_distance_nm"] > SUBSEA_INTERSECTION_THRESHOLD_NM:
+        notes.append("does not intersect")
 
-    keel = iceberg["keel_depth_m"]
-    depth = platform["depth_m"]
+    if depth_ratio >= SUBSEA_GROUNDING_RATIO:
+        notes.append("iceberg will ground")
 
-    if will_ground(keel, depth):
-        if closest_dist < 5:
-            return "red", "iceberg will ground"
-        elif closest_dist < 10:
-            return "yellow", "iceberg will ground"
-        return "green", "iceberg will ground"
+    if metrics["closest_distance_nm"] > SUBSEA_INTERSECTION_THRESHOLD_NM or depth_ratio >= SUBSEA_GROUNDING_RATIO:
+        return "green", " / ".join(notes), metrics
 
-    if keel < depth * 0.75:
-        return "green", "insufficient keel depth"
+    if depth_ratio >= SUBSEA_RED_RATIO:
+        return "red", "", metrics
 
-    if keel < depth:
-        base = classify_threat(closest_dist)
-        if base == "red":
-            return "yellow", ""
-        return "green", "insufficient keel depth"
+    if depth_ratio >= SUBSEA_YELLOW_RATIO:
+        return "yellow", "", metrics
 
-    return classify_threat(closest_dist), ""
+    return "green", "insufficient keel depth", metrics
 
 
-def predict_trajectory_points(iceberg, distance_nm_max=60, step_nm=2):
+def predict_trajectory_points(iceberg, distance_nm_max=120, step_nm=2):
     """Generate trajectory points along iceberg heading."""
     points = []
     steps = int(distance_nm_max / step_nm)
@@ -145,10 +178,8 @@ def predict_trajectory_points(iceberg, distance_nm_max=60, step_nm=2):
     return points
 
 
-def assess_all_threats(icebergs=None, platforms=None):
+def assess_all_threats(icebergs, platforms=None):
     """Run full threat assessment. Returns structured results."""
-    if icebergs is None:
-        icebergs = EXAMPLE_ICEBERGS
     if platforms is None:
         platforms = PLATFORMS
 
@@ -160,16 +191,24 @@ def assess_all_threats(icebergs=None, platforms=None):
             "subsea_threats": {},
         }
         for platform in platforms:
-            p_threat, p_dist = platform_threat(iceberg, platform)
-            s_threat, s_note = subsea_threat(iceberg, platform)
+            p_threat, metrics, p_note = platform_threat(iceberg, platform)
+            s_threat, s_note, subsea_metrics = subsea_threat(iceberg, platform)
             iceberg_result["platform_threats"][platform["id"]] = {
                 "level": p_threat,
-                "distance_nm": round(p_dist, 2),
+                "distance_nm": round(metrics["closest_distance_nm"], 2),
+                "direct_distance_nm": round(metrics["direct_distance_nm"], 2),
+                "bearing_deg": round(metrics["bearing_to_platform_deg"], 2),
+                "angle_diff_deg": round(metrics["angle_diff_deg"], 2),
+                "along_track_distance_nm": round(metrics["along_track_distance_nm"], 2),
+                "intersects_forward": metrics["intersects_forward"],
+                "note": p_note,
                 "platform_name": platform["name"],
             }
             iceberg_result["subsea_threats"][platform["id"]] = {
                 "level": s_threat,
                 "note": s_note,
+                "distance_nm": round(subsea_metrics["closest_distance_nm"], 2),
+                "intersects_zone": subsea_metrics["closest_distance_nm"] <= SUBSEA_INTERSECTION_THRESHOLD_NM,
                 "platform_name": platform["name"],
             }
         results.append(iceberg_result)

@@ -4,13 +4,13 @@
 {% block content %}
 <div class="flex flex-col lg:flex-row gap-4 p-4">
 
-    <!-- Left Panel: Map -->
+    <!-- Left Panel: Graph -->
     <div class="lg:w-3/5 flex flex-col gap-4">
-        <!-- Map Card -->
+        <!-- Graph Card -->
         <div class="card rounded-lg border border-border bg-card shadow-sm">
             <div class="px-4 py-3 border-b border-border">
-                <h2 class="text-sm font-semibold text-foreground">Operations Map</h2>
-                <p class="text-xs text-muted-foreground">Oil platforms, icebergs, and threat zones</p>
+                <h2 class="text-sm font-semibold text-foreground">Operations Graph</h2>
+                <p class="text-xs text-muted-foreground">Local latitude/longitude plot with heading lines</p>
             </div>
             <div id="map" class="w-full" style="height: 520px;"></div>
         </div>
@@ -111,13 +111,27 @@
                     </div>
                     <div>
                         <label class="text-xs font-medium text-muted-foreground">Latitude</label>
-                        <input type="number" step="0.0001" name="latitude" required placeholder="47.5000" min="-90" max="90"
-                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                        <div class="mt-1 flex gap-2">
+                            <input type="number" step="0.0001" name="latitude" required placeholder="47.6500" min="0" max="90"
+                                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                            <select name="latitude_hemisphere"
+                                class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                                <option value="N" selected>N</option>
+                                <option value="S">S</option>
+                            </select>
+                        </div>
                     </div>
                     <div>
                         <label class="text-xs font-medium text-muted-foreground">Longitude</label>
-                        <input type="number" step="0.0001" name="longitude" required placeholder="-48.5000" min="-180" max="180"
-                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                        <div class="mt-1 flex gap-2">
+                            <input type="number" step="0.0001" name="longitude" required placeholder="48.6167" min="0" max="180"
+                                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                            <select name="longitude_hemisphere"
+                                class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                                <option value="W" selected>W</option>
+                                <option value="E">E</option>
+                            </select>
+                        </div>
                     </div>
                     <div>
                         <label class="text-xs font-medium text-muted-foreground">Heading (deg)</label>
@@ -128,6 +142,9 @@
                         <label class="text-xs font-medium text-muted-foreground">Keel Depth (m)</label>
                         <input type="number" step="1" name="keel_depth_m" required placeholder="80" min="1"
                             class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-ring focus:outline-none">
+                    </div>
+                    <div class="col-span-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                        PDF examples are in <b>North</b> and <b>West</b>. Enter the numeric value from the sheet and keep <b>N</b>/<b>W</b> selected.
                     </div>
                     <div class="col-span-2 flex gap-2 justify-end">
                         <button type="button" id="btn-cancel-form" class="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent transition-colors">Cancel</button>
@@ -158,4 +175,11 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/iceberg-form.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}
