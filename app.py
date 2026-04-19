@@ -5,7 +5,7 @@ from flask import Flask, jsonify, render_template, request, Response
 
 from config import FREQUENCY_SPECIES, PLATFORMS, MAP_CENTER, MAP_ZOOM
 from threat_engine import assess_all_threats, threat_summary, predict_trajectory_points
-from export import generate_pdf, generate_csv
+from export import generate_pdf, generate_csv, generate_frequency_pdf
 
 app = Flask(__name__)
 
@@ -191,6 +191,37 @@ def export_csv():
         csv_str,
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename=threat_report_{timestamp}.csv"},
+    )
+
+
+@app.route("/api/frequency/export/pdf", methods=["POST"])
+def export_frequency_pdf():
+    data = request.get_json(silent=True) or {}
+    raw_counts = data.get("counts", [])
+
+    if not isinstance(raw_counts, list):
+        return jsonify({"error": "counts must be an array"}), 400
+
+    if len(raw_counts) != len(FREQUENCY_SPECIES):
+        return jsonify({"error": f"counts must contain exactly {len(FREQUENCY_SPECIES)} values"}), 400
+
+    counts = []
+    for value in raw_counts:
+        try:
+            count = int(value)
+            if count < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "counts must contain only non-negative integers"}), 400
+        counts.append(count)
+
+    pdf_bytes = generate_frequency_pdf(FREQUENCY_SPECIES, counts)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=frequency_report_{timestamp}.pdf"},
     )
 
 

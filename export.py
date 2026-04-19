@@ -1,6 +1,7 @@
 import csv
 import io
 from datetime import datetime, timezone
+from html import escape
 
 
 def generate_csv(results):
@@ -29,6 +30,18 @@ def generate_csv(results):
 def generate_pdf(results, summary, platforms, icebergs):
     """Generate PDF threat report using WeasyPrint."""
     html = _build_report_html(results, summary, platforms, icebergs)
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html).write_pdf()
+        return pdf_bytes
+    except ImportError:
+        # Fallback: return HTML as bytes if weasyprint not available
+        return html.encode("utf-8")
+
+
+def generate_frequency_pdf(species, counts):
+    """Generate PDF frequency report in a clear tabular style for judges."""
+    html = _build_frequency_report_html(species, counts)
     try:
         from weasyprint import HTML
         pdf_bytes = HTML(string=html).write_pdf()
@@ -145,4 +158,111 @@ def _build_report_html(results, summary, platforms, icebergs):
     </body>
     </html>
     """
+    return html
+
+
+def _format_frequency_value(value):
+    if not value:
+        return "0"
+    return f"{value:.9f}".rstrip("0").rstrip(".")
+
+
+def _build_frequency_report_html(species, counts):
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    total_seen = sum(counts)
+
+    rows = ""
+    for item, count in zip(species, counts):
+        frequency = (count / total_seen) if total_seen > 0 else 0
+        species_label = f"{escape(item['name'])} (<em>{escape(item['scientific_name'])}</em>)"
+        rows += f"""
+            <tr>
+                <td>{species_label}</td>
+                <td class=\"number\">{count}</td>
+                <td class=\"number\">{_format_frequency_value(frequency)}</td>
+            </tr>"""
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\">
+        <style>
+            @page {{
+                size: A4;
+                margin: 20mm;
+            }}
+
+            body {{
+                font-family: Arial, Helvetica, sans-serif;
+                color: #111111;
+                margin: 0;
+                font-size: 12pt;
+            }}
+
+            h1 {{
+                margin: 0 0 6px 0;
+                font-size: 19pt;
+            }}
+
+            .subtitle {{
+                margin: 0 0 14px 0;
+                color: #333333;
+                font-size: 10pt;
+            }}
+
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }}
+
+            th,
+            td {{
+                border: 2px solid #000000;
+                padding: 8px 10px;
+                vertical-align: middle;
+                word-wrap: break-word;
+            }}
+
+            th {{
+                background: #ffffff;
+                font-size: 12pt;
+                text-align: left;
+            }}
+
+            td.number {{
+                text-align: center;
+                width: 18%;
+            }}
+
+            .footer {{
+                margin-top: 10px;
+                font-size: 10pt;
+                color: #333333;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Frequency Mission Report</h1>
+        <p class=\"subtitle\">Generated {now}</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style=\"width: 64%;\">Species</th>
+                    <th style=\"width: 18%; text-align: center;\">Number Seen</th>
+                    <th style=\"width: 18%; text-align: center;\">% frequency</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+
+        <p class=\"footer\">Total Seen: {total_seen}</p>
+    </body>
+    </html>
+    """
+
     return html

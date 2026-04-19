@@ -90,6 +90,51 @@ const FrequencyMission = (() => {
             .catch(() => window.ROVCopilotBase?.showToast('Unable to copy output', 'error'));
     }
 
+    async function exportPdf(inputs) {
+        const counts = inputs.map((input) => parseCount(input.value));
+
+        try {
+            const response = await fetch('/api/frequency/export/pdf', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ counts }),
+            });
+
+            if (!response.ok) {
+                let message = 'Failed to export PDF';
+                try {
+                    const payload = await response.json();
+                    if (payload?.error) {
+                        message = payload.error;
+                    }
+                } catch (_) {
+                    // ignore JSON parse failure
+                }
+                throw new Error(message);
+            }
+
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+            const filename = filenameMatch ? filenameMatch[1] : 'frequency_report.pdf';
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+
+            window.ROVCopilotBase?.showToast('Frequency PDF exported', 'success');
+        } catch (error) {
+            window.ROVCopilotBase?.showToast(error.message || 'Unable to export PDF', 'error');
+        }
+    }
+
     function init() {
         const inputs = Array.from(document.querySelectorAll('[data-frequency-input]'));
         if (inputs.length === 0) {
@@ -100,6 +145,7 @@ const FrequencyMission = (() => {
         const applyQuickCountsButton = document.getElementById('btn-apply-quick-counts');
         const clearButton = document.getElementById('btn-clear-frequency');
         const copyButton = document.getElementById('btn-copy-frequency-lines');
+        const exportPdfButton = document.getElementById('btn-export-frequency-pdf');
 
         inputs.forEach((input, index) => {
             input.addEventListener('focus', () => input.select());
@@ -150,6 +196,9 @@ const FrequencyMission = (() => {
         });
 
         copyButton.addEventListener('click', copyOutput);
+        if (exportPdfButton) {
+            exportPdfButton.addEventListener('click', () => exportPdf(inputs));
+        }
 
         updateView(inputs);
         focusInput(inputs, 0);
