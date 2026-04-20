@@ -111,14 +111,26 @@ const ROVCopilotMap = (() => {
         return ticks;
     }
 
-    function formatAxisLabel(value, axis) {
-        const absolute = Math.abs(value);
-        const degrees = Math.floor(absolute);
-        const minutes = Math.round((absolute - degrees) * 60);
+    function formatCoordinate(value, axis) {
         const hemisphere = axis === 'lat'
             ? (value >= 0 ? 'N' : 'S')
             : (value >= 0 ? 'E' : 'W');
-        return `${degrees}°${String(minutes).padStart(2, '0')}'${hemisphere}`;
+        const absolute = Math.abs(value);
+        let degrees = Math.floor(absolute);
+        let minutes = Number(((absolute - degrees) * 60).toFixed(3));
+
+        if (minutes >= 60) {
+            degrees += 1;
+            minutes = 0;
+        }
+
+        const minutesText = minutes.toFixed(3).replace(/\.?0+$/, '');
+        const [minuteWhole, minuteFraction = ''] = minutesText.split('.');
+        return `${degrees}.${String(minuteWhole).padStart(2, '0')}${minuteFraction}${hemisphere}`;
+    }
+
+    function formatAxisLabel(value, axis) {
+        return formatCoordinate(value, axis);
     }
 
     function destinationPoint(lat, lon, bearingDeg, distanceNm) {
@@ -201,7 +213,7 @@ const ROVCopilotMap = (() => {
             const point = project(platform.latitude, platform.longitude);
             svg.push(`
                 <g>
-                    <title>${escapeHtml(`${platform.name} | ${platform.label} | Depth ${platform.depth_m}m`)}</title>
+                    <title>${escapeHtml(`${platform.name} | ${formatCoordinate(platform.latitude, 'lat')} ${formatCoordinate(platform.longitude, 'lon')} | Depth ${platform.depth_m}m`)}</title>
                     <circle cx="${point.x}" cy="${point.y}" r="8" class="ops-graph-platform"></circle>
                     <circle cx="${point.x}" cy="${point.y}" r="4.5" class="ops-graph-platform-core"></circle>
                     <text x="${point.x + 14}" y="${point.y + 5}" class="ops-graph-label">${escapeHtml(platform.name)}</text>
@@ -232,7 +244,12 @@ const ROVCopilotMap = (() => {
             const endY = Number.isFinite(t) ? point.y + vectorY * t : farPoint.y;
             const color = threatColor(worstThreat(threat));
 
-            const tooltipLines = [iceberg.name, `Heading ${iceberg.heading}°`, `Keel ${iceberg.keel_depth_m}m`];
+            const tooltipLines = [
+                iceberg.name,
+                `${formatCoordinate(iceberg.latitude, 'lat')} ${formatCoordinate(iceberg.longitude, 'lon')}`,
+                `Heading ${iceberg.heading}°`,
+                `Keel ${iceberg.keel_depth_m}m`,
+            ];
             PLATFORM_ORDER.forEach((platformId) => {
                 const platformThreat = threat?.platform_threats?.[platformId];
                 const subseaThreat = threat?.subsea_threats?.[platformId];

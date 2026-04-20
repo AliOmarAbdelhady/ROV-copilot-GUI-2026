@@ -61,6 +61,27 @@ def _threat_badge(level):
     )
 
 
+def _format_coordinate(value, axis):
+    numeric_value = float(value)
+    absolute = abs(numeric_value)
+    degrees = int(absolute)
+    minutes = round((absolute - degrees) * 60, 3)
+    if minutes >= 60:
+        degrees += 1
+        minutes = 0.0
+
+    minutes_text = f"{minutes:.3f}".rstrip("0").rstrip(".")
+    minute_whole, _, minute_fraction = minutes_text.partition(".")
+    compact_minutes = f"{int(minute_whole):02d}{minute_fraction}"
+    hemisphere = (
+        "N" if axis == "lat" and numeric_value >= 0
+        else "S" if axis == "lat"
+        else "E" if numeric_value >= 0
+        else "W"
+    )
+    return f"{degrees}.{compact_minutes}{hemisphere}"
+
+
 def _build_report_html(results, summary, platforms, icebergs):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     rows = ""
@@ -142,7 +163,7 @@ def _build_report_html(results, summary, platforms, icebergs):
                 <tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Depth (m)</th></tr>
             </thead>
             <tbody>
-                {''.join(f'<tr><td>{p["name"]}</td><td>{p["latitude"]}</td><td>{p["longitude"]}</td><td>{p["depth_m"]}</td></tr>' for p in platforms)}
+                {''.join(f'<tr><td>{p["name"]}</td><td>{_format_coordinate(p["latitude"], "lat")}</td><td>{_format_coordinate(p["longitude"], "lon")}</td><td>{p["depth_m"]}</td></tr>' for p in platforms)}
             </tbody>
         </table>
 
@@ -152,7 +173,7 @@ def _build_report_html(results, summary, platforms, icebergs):
                 <tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Heading</th><th>Keel Depth (m)</th></tr>
             </thead>
             <tbody>
-                {''.join(f'<tr><td>{ib["name"]}</td><td>{ib["latitude"]}</td><td>{ib["longitude"]}</td><td>{ib["heading"]}°</td><td>{ib["keel_depth_m"]}</td></tr>' for ib in icebergs)}
+                {''.join(f'<tr><td>{ib["name"]}</td><td>{_format_coordinate(ib["latitude"], "lat")}</td><td>{_format_coordinate(ib["longitude"], "lon")}</td><td>{ib["heading"]}°</td><td>{ib["keel_depth_m"]}</td></tr>' for ib in icebergs)}
             </tbody>
         </table>
     </body>

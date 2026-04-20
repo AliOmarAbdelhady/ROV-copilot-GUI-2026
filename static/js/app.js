@@ -33,14 +33,32 @@ const ROVCopilotApp = (() => {
         return `<div style="margin-top:4px;font-size:10px;line-height:1.35;color:hsl(var(--muted-foreground));">${filtered.map(escapeHtml).join('<br>')}</div>`;
     }
 
+    function formatCoordinate(value, axis) {
+        const numericValue = Number(value);
+        const hemisphere = axis === 'lat'
+            ? (numericValue >= 0 ? 'N' : 'S')
+            : (numericValue >= 0 ? 'E' : 'W');
+        const absolute = Math.abs(numericValue);
+        let degrees = Math.floor(absolute);
+        let minutes = Number(((absolute - degrees) * 60).toFixed(3));
+
+        if (minutes >= 60) {
+            degrees += 1;
+            minutes = 0;
+        }
+
+        const minutesText = minutes.toFixed(3).replace(/\.?0+$/, '');
+        const [minuteWhole, minuteFraction = ''] = minutesText.split('.');
+        const compactMinutes = `${String(minuteWhole).padStart(2, '0')}${minuteFraction}`;
+        return `${degrees}.${compactMinutes}${hemisphere}`;
+    }
+
     function formatLatitude(value) {
-        const hemisphere = value >= 0 ? 'N' : 'S';
-        return `${Math.abs(value).toFixed(4)}${hemisphere}`;
+        return formatCoordinate(value, 'lat');
     }
 
     function formatLongitude(value) {
-        const hemisphere = value >= 0 ? 'E' : 'W';
-        return `${Math.abs(value).toFixed(4)}${hemisphere}`;
+        return formatCoordinate(value, 'lon');
     }
 
     async function loadAll() {

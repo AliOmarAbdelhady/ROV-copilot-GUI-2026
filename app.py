@@ -12,9 +12,50 @@ app = Flask(__name__)
 icebergs = []
 
 
-def normalize_latitude(value, hemisphere=None):
+def parse_coordinate_input(value, axis_name, input_format="decimal"):
+    """Parse decimal degrees or a `degrees.minutes` convenience format."""
+    if input_format != "dot_minutes":
+        return float(value)
+
+    raw_value = str(value).strip()
+    if not raw_value:
+        raise ValueError(f"{axis_name.capitalize()} is required")
+
+    sign = 1
+    if raw_value[0] in "+-":
+        sign = -1 if raw_value[0] == "-" else 1
+        raw_value = raw_value[1:]
+
+    degrees_text, separator, minutes_digits = raw_value.partition(".")
+    if not degrees_text.isdigit():
+        raise ValueError(f"Invalid {axis_name} value")
+
+    degrees = int(degrees_text)
+    if not separator:
+        return sign * float(degrees)
+
+    if len(minutes_digits) < 2 or not minutes_digits.isdigit():
+        raise ValueError(
+            f"{axis_name.capitalize()} must use degrees.minutes like 46.45024"
+        )
+
+    minutes_whole = minutes_digits[:2]
+    minutes_fraction = minutes_digits[2:]
+    minutes_text = (
+        f"{minutes_whole}.{minutes_fraction}" if minutes_fraction else minutes_whole
+    )
+    minutes = float(minutes_text)
+    if not 0 <= minutes < 60:
+        raise ValueError(
+            f"{axis_name.capitalize()} minutes must be between 00 and 59.999"
+        )
+
+    return sign * (degrees + (minutes / 60))
+
+
+def normalize_latitude(value, hemisphere=None, input_format="decimal"):
     """Normalize latitude using an optional hemisphere marker."""
-    latitude = float(value)
+    latitude = parse_coordinate_input(value, "latitude", input_format)
     if hemisphere:
         hemisphere = hemisphere.strip().upper()
         if hemisphere == "S":
@@ -24,7 +65,7 @@ def normalize_latitude(value, hemisphere=None):
     return latitude
 
 
-def normalize_longitude(value, hemisphere=None):
+def normalize_longitude(value, hemisphere=None, input_format="decimal"):
     """
     Normalize longitude for the competition operating area.
 
@@ -32,7 +73,7 @@ def normalize_longitude(value, hemisphere=None):
     positive longitude is treated as west so PDF examples can be entered
     directly as `48.6167` instead of `-48.6167`.
     """
-    longitude = float(value)
+    longitude = parse_coordinate_input(value, "longitude", input_format)
     if hemisphere:
         hemisphere = hemisphere.strip().upper()
         if hemisphere == "W":
@@ -88,20 +129,29 @@ def get_icebergs():
 def add_iceberg():
     data = request.get_json()
     errors = []
+    input_format = data.get("coordinate_format", "decimal")
 
     try:
-        lat = normalize_latitude(data.get("latitude", 0), data.get("latitude_hemisphere"))
+        lat = normalize_latitude(
+            data.get("latitude", 0),
+            data.get("latitude_hemisphere"),
+            input_format,
+        )
         if not -90 <= lat <= 90:
             errors.append("Latitude must be between -90 and 90")
-    except (TypeError, ValueError):
-        errors.append("Invalid latitude value")
+    except (TypeError, ValueError) as error:
+        errors.append(str(error) or "Invalid latitude value")
 
     try:
-        lon = normalize_longitude(data.get("longitude", 0), data.get("longitude_hemisphere"))
+        lon = normalize_longitude(
+            data.get("longitude", 0),
+            data.get("longitude_hemisphere"),
+            input_format,
+        )
         if not -180 <= lon <= 180:
             errors.append("Longitude must be between -180 and 180")
-    except (TypeError, ValueError):
-        errors.append("Invalid longitude value")
+    except (TypeError, ValueError) as error:
+        errors.append(str(error) or "Invalid longitude value")
 
     try:
         heading = float(data.get("heading", 0))

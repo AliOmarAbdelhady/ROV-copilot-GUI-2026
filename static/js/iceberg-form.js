@@ -21,10 +21,11 @@ const ROVCopilotForm = (() => {
             e.preventDefault();
             const data = {
                 name: form.name.value,
-                latitude: parseFloat(form.latitude.value),
+                latitude: form.latitude.value,
                 latitude_hemisphere: form.latitude_hemisphere.value,
-                longitude: parseFloat(form.longitude.value),
+                longitude: form.longitude.value,
                 longitude_hemisphere: form.longitude_hemisphere.value,
+                coordinate_format: 'dot_minutes',
                 heading: parseFloat(form.heading.value),
                 keel_depth_m: parseFloat(form.keel_depth_m.value),
             };
