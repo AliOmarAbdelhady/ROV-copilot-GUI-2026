@@ -161,9 +161,7 @@ const ROVCopilotApp = (() => {
 
     function setupThemeSync() {
         document.addEventListener('theme:changed', () => {
-            fetchJSON('/api/threats').then((data) => {
-                ROVCopilotCharts.update(data.summary);
-            });
+            ROVCopilotCharts.refresh();
         });
     }
 
