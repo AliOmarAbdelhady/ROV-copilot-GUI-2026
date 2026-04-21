@@ -1,5 +1,5 @@
 const ROVCopilotApp = (() => {
-    const PLATFORM_ORDER = ['hibernia', 'sea_rose', 'terra_nova', 'hebron'];
+    const PLATFORM_ORDER = ['hibernia', 'hebron', 'sea_rose', 'terra_nova'];
 
     async function fetchJSON(url) {
         const response = await fetch(url);

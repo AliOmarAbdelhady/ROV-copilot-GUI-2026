@@ -1,7 +1,22 @@
 import csv
 import io
+import math
 from datetime import datetime, timezone
 from html import escape
+
+from threat_engine import destination_point
+
+
+PDF_GRAPH_SIZE = {"width": 760, "height": 760}
+PDF_GRAPH_PADDING = {"top": 48, "right": 74, "bottom": 44, "left": 46}
+PDF_GRAPH_DEFAULT_BOUNDS = {
+    "minLat": 46.2,
+    "maxLat": 48.05,
+    "minLon": -49.65,
+    "maxLon": -47.65,
+}
+PDF_GRAPH_TICK_STEP = 0.5
+PDF_GRAPH_TRACK_DISTANCE_NM = 240
 
 
 def generate_csv(results):
@@ -82,21 +97,205 @@ def _format_coordinate(value, axis):
     return f"{degrees}.{compact_minutes}{hemisphere}"
 
 
+def _format_axis_coordinate(value, axis):
+    absolute = abs(float(value))
+    degrees = int(absolute)
+    minutes = round((absolute - degrees) * 60)
+    if minutes >= 60:
+        degrees += 1
+        minutes = 0
+
+    hemisphere = (
+        "N" if axis == "lat" and value >= 0
+        else "S" if axis == "lat"
+        else "E" if value >= 0
+        else "W"
+    )
+    return f"{degrees}\N{DEGREE SIGN}{minutes:02d}'{hemisphere}"
+
+
+def _build_graph_ticks(minimum, maximum, step):
+    ticks = []
+    epsilon = step / 100
+    start = math.ceil((minimum - epsilon) / step) * step
+
+    value = start
+    while value <= maximum + epsilon:
+        ticks.append(round(value, 6))
+        value += step
+
+    return ticks
+
+
+def _compute_pdf_graph_bounds(platforms, icebergs):
+    bounds = dict(PDF_GRAPH_DEFAULT_BOUNDS)
+    points = list(platforms) + list(icebergs)
+
+    if points:
+        bounds["minLat"] = min(bounds["minLat"], *(point["latitude"] for point in points))
+        bounds["maxLat"] = max(bounds["maxLat"], *(point["latitude"] for point in points))
+        bounds["minLon"] = min(bounds["minLon"], *(point["longitude"] for point in points))
+        bounds["maxLon"] = max(bounds["maxLon"], *(point["longitude"] for point in points))
+
+    lat_pad = max(0.08, (bounds["maxLat"] - bounds["minLat"]) * 0.08)
+    lon_pad = max(0.08, (bounds["maxLon"] - bounds["minLon"]) * 0.08)
+
+    return {
+        "minLat": bounds["minLat"] - lat_pad,
+        "maxLat": bounds["maxLat"] + lat_pad,
+        "minLon": bounds["minLon"] - lon_pad,
+        "maxLon": bounds["maxLon"] + lon_pad,
+    }
+
+
+def _build_report_graph_svg(platforms, icebergs):
+    width = PDF_GRAPH_SIZE["width"]
+    height = PDF_GRAPH_SIZE["height"]
+    plot_width = width - PDF_GRAPH_PADDING["left"] - PDF_GRAPH_PADDING["right"]
+    plot_height = height - PDF_GRAPH_PADDING["top"] - PDF_GRAPH_PADDING["bottom"]
+    bounds = _compute_pdf_graph_bounds(platforms, icebergs)
+    lon_ticks = _build_graph_ticks(bounds["minLon"], bounds["maxLon"], PDF_GRAPH_TICK_STEP)
+    lat_ticks = _build_graph_ticks(bounds["minLat"], bounds["maxLat"], PDF_GRAPH_TICK_STEP)
+
+    def project(latitude, longitude):
+        return {
+            "x": PDF_GRAPH_PADDING["left"] + (
+                (longitude - bounds["minLon"]) / (bounds["maxLon"] - bounds["minLon"])
+            ) * plot_width,
+            "y": PDF_GRAPH_PADDING["top"] + (
+                (bounds["maxLat"] - latitude) / (bounds["maxLat"] - bounds["minLat"])
+            ) * plot_height,
+        }
+
+    def heading_endpoint(point, iceberg):
+        ray_lat, ray_lon = destination_point(
+            iceberg["latitude"],
+            iceberg["longitude"],
+            iceberg["heading"],
+            PDF_GRAPH_TRACK_DISTANCE_NM,
+        )
+        far_point = project(ray_lat, ray_lon)
+        vector_x = far_point["x"] - point["x"]
+        vector_y = far_point["y"] - point["y"]
+        min_x = PDF_GRAPH_PADDING["left"]
+        max_x = width - PDF_GRAPH_PADDING["right"]
+        min_y = PDF_GRAPH_PADDING["top"]
+        max_y = height - PDF_GRAPH_PADDING["bottom"]
+        candidates = []
+
+        if vector_x > 0:
+            candidates.append((max_x - point["x"]) / vector_x)
+        elif vector_x < 0:
+            candidates.append((min_x - point["x"]) / vector_x)
+
+        if vector_y > 0:
+            candidates.append((max_y - point["y"]) / vector_y)
+        elif vector_y < 0:
+            candidates.append((min_y - point["y"]) / vector_y)
+
+        valid_candidates = [value for value in candidates if value > 0]
+        if not valid_candidates:
+            return far_point
+
+        t_value = min(valid_candidates)
+        return {
+            "x": point["x"] + (vector_x * t_value),
+            "y": point["y"] + (vector_y * t_value),
+        }
+
+    svg = [
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+            'role="img" aria-label="Operations graph for the PDF report">'
+        ),
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff"/>',
+    ]
+
+    for tick in lon_ticks:
+        x_pos = project(bounds["minLat"], tick)["x"]
+        svg.append(
+            f'<line x1="{x_pos:.2f}" y1="{PDF_GRAPH_PADDING["top"]}" '
+            f'x2="{x_pos:.2f}" y2="{height - PDF_GRAPH_PADDING["bottom"]}" '
+            'stroke="#6b7280" stroke-width="1"/>'
+        )
+        svg.append(
+            f'<text x="{x_pos:.2f}" y="22" text-anchor="middle" '
+            'font-family="Arial, Helvetica, sans-serif" font-size="12" '
+            f'font-weight="600" fill="#111827">{escape(_format_axis_coordinate(tick, "lon"))}</text>'
+        )
+
+    for tick in lat_ticks:
+        y_pos = project(tick, bounds["minLon"])["y"]
+        label_x = width - 16
+        label_y = y_pos + 4
+        svg.append(
+            f'<line x1="{PDF_GRAPH_PADDING["left"]}" y1="{y_pos:.2f}" '
+            f'x2="{width - PDF_GRAPH_PADDING["right"]}" y2="{y_pos:.2f}" '
+            'stroke="#6b7280" stroke-width="1"/>'
+        )
+        svg.append(
+            f'<text x="{label_x}" y="{label_y:.2f}" '
+            'font-family="Arial, Helvetica, sans-serif" font-size="12" '
+            f'font-weight="600" fill="#111827" transform="rotate(90 {label_x} {label_y:.2f})">'
+            f'{escape(_format_axis_coordinate(tick, "lat"))}</text>'
+        )
+
+    for iceberg in icebergs:
+        point = project(iceberg["latitude"], iceberg["longitude"])
+        end_point = heading_endpoint(point, iceberg)
+        svg.append(
+            f'<line x1="{point["x"]:.2f}" y1="{point["y"]:.2f}" '
+            f'x2="{end_point["x"]:.2f}" y2="{end_point["y"]:.2f}" '
+            'stroke="#111827" stroke-width="2.4" stroke-linecap="round"/>'
+        )
+
+    for index, platform in enumerate(platforms):
+        point = project(platform["latitude"], platform["longitude"])
+        label_offset_y = -8 if index % 2 == 0 else 4
+        svg.append(
+            f'<circle cx="{point["x"]:.2f}" cy="{point["y"]:.2f}" r="5.5" '
+            'fill="#ffffff" stroke="#111827" stroke-width="1.5"/>'
+        )
+        svg.append(
+            f'<text x="{point["x"] + 10:.2f}" y="{point["y"] + label_offset_y:.2f}" '
+            'font-family="Arial, Helvetica, sans-serif" font-size="13" '
+            f'font-weight="700" fill="#111827">{escape(platform["name"])}</text>'
+        )
+
+    for index, iceberg in enumerate(icebergs):
+        point = project(iceberg["latitude"], iceberg["longitude"])
+        x_offset = -6 if index % 2 == 0 else 12
+        y_offset = -12 if index % 3 != 1 else 18
+        anchor = "end" if x_offset < 0 else "start"
+        svg.append(
+            f'<circle cx="{point["x"]:.2f}" cy="{point["y"]:.2f}" r="4.8" fill="#111827"/>'
+        )
+        svg.append(
+            f'<text x="{point["x"] + x_offset:.2f}" y="{point["y"] + y_offset:.2f}" '
+            'font-family="Arial, Helvetica, sans-serif" font-size="14" '
+            f'text-anchor="{anchor}" font-weight="700" fill="#111827">{escape(iceberg["name"])}</text>'
+        )
+
+    svg.append("</svg>")
+    return "".join(svg)
+
+
 def _build_report_html(results, summary, platforms, icebergs):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    graph_svg = _build_report_graph_svg(platforms, icebergs)
     rows = ""
     for r in results:
-        iceberg_name = r["iceberg"]["name"]
+        iceberg_name = escape(r["iceberg"]["name"])
         for pid, pt in r["platform_threats"].items():
             st = r["subsea_threats"][pid]
             rows += f"""
             <tr>
                 <td>{iceberg_name}</td>
-                <td>{pt['platform_name']}</td>
+                <td>{escape(pt['platform_name'])}</td>
                 <td>{_threat_badge(pt['level'])}</td>
                 <td>{pt['distance_nm']} nm</td>
                 <td>{_threat_badge(st['level'])}</td>
-                <td>{st['note']}</td>
+                <td>{escape(st['note'])}</td>
             </tr>"""
 
     total = summary["total"]
@@ -106,10 +305,16 @@ def _build_report_html(results, summary, platforms, icebergs):
     <head>
         <meta charset="utf-8">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; color: #1e293b; }}
-            h1 {{ font-size: 24px; margin-bottom: 4px; }}
-            h2 {{ font-size: 18px; margin-top: 30px; color: #475569; }}
-            .subtitle {{ color: #64748b; font-size: 14px; margin-bottom: 24px; }}
+            @page {{ size: A4; margin: 15mm; }}
+            body {{ font-family: Arial, Helvetica, sans-serif; margin: 0; color: #1e293b; font-size: 12px; }}
+            h1 {{ font-size: 24px; margin: 0 0 4px; }}
+            h2 {{ font-size: 17px; margin: 24px 0 10px; color: #334155; }}
+            .subtitle {{ color: #64748b; font-size: 13px; margin: 0 0 18px; }}
+            .graph-panel {{ border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; margin-bottom: 20px; page-break-inside: avoid; }}
+            .graph-section {{ break-before: page; page-break-before: always; }}
+            .graph-title {{ margin: 0 0 4px; font-size: 14px; font-weight: 700; color: #0f172a; }}
+            .graph-copy {{ margin: 0 0 12px; color: #64748b; font-size: 11px; }}
+            .graph-svg {{ width: 100%; }}
             table {{ width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }}
             th {{ background: #f1f5f9; text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; }}
             td {{ padding: 6px 12px; border-bottom: 1px solid #e2e8f0; }}
@@ -163,7 +368,7 @@ def _build_report_html(results, summary, platforms, icebergs):
                 <tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Depth (m)</th></tr>
             </thead>
             <tbody>
-                {''.join(f'<tr><td>{p["name"]}</td><td>{_format_coordinate(p["latitude"], "lat")}</td><td>{_format_coordinate(p["longitude"], "lon")}</td><td>{p["depth_m"]}</td></tr>' for p in platforms)}
+                {''.join(f'<tr><td>{escape(p["name"])}</td><td>{_format_coordinate(p["latitude"], "lat")}</td><td>{_format_coordinate(p["longitude"], "lon")}</td><td>{p["depth_m"]}</td></tr>' for p in platforms)}
             </tbody>
         </table>
 
@@ -173,9 +378,17 @@ def _build_report_html(results, summary, platforms, icebergs):
                 <tr><th>Name</th><th>Latitude</th><th>Longitude</th><th>Heading</th><th>Keel Depth (m)</th></tr>
             </thead>
             <tbody>
-                {''.join(f'<tr><td>{ib["name"]}</td><td>{_format_coordinate(ib["latitude"], "lat")}</td><td>{_format_coordinate(ib["longitude"], "lon")}</td><td>{ib["heading"]}°</td><td>{ib["keel_depth_m"]}</td></tr>' for ib in icebergs)}
+                {''.join(f'<tr><td>{escape(ib["name"])}</td><td>{_format_coordinate(ib["latitude"], "lat")}</td><td>{_format_coordinate(ib["longitude"], "lon")}</td><td>{ib["heading"]}°</td><td>{ib["keel_depth_m"]}</td></tr>' for ib in icebergs)}
             </tbody>
         </table>
+
+        <div class="graph-section">
+            <h2>Operations Graph</h2>
+            <div class="graph-panel">
+                <p class="graph-copy">Latitude/longitude plot of the current iceberg positions, fixed platforms, and projected heading lines.</p>
+                <div class="graph-svg">{graph_svg}</div>
+            </div>
+        </div>
     </body>
     </html>
     """

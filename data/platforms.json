@@ -8,6 +8,14 @@
     "label": "46°45'02\"N 48°46'59\"W"
   },
   {
+    "id": "hebron",
+    "name": "Hebron",
+    "latitude": 46.544,
+    "longitude": -48.518,
+    "depth_m": 93,
+    "label": "46°32'11\"N 48°30'46\"W"
+  },
+  {
     "id": "sea_rose",
     "name": "Sea Rose",
     "latitude": 46.7895,
@@ -22,13 +30,5 @@
     "longitude": -48.4,
     "depth_m": 91,
     "label": "46°23'21\"N 48°28'46\"W"
-  },
-  {
-    "id": "hebron",
-    "name": "Hebron",
-    "latitude": 46.544,
-    "longitude": -48.518,
-    "depth_m": 93,
-    "label": "46°32'11\"N 48°30'46\"W"
   }
 ]

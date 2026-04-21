@@ -105,7 +105,7 @@ const ROVCopilotCharts = (() => {
 
         // Update bar chart
         const perPlatform = summary.per_platform;
-        const platformOrder = ['hibernia', 'sea_rose', 'terra_nova', 'hebron'];
+        const platformOrder = ['hibernia', 'hebron', 'sea_rose', 'terra_nova'];
         const labels = platformOrder.map(id => perPlatform[id]?.name || id);
         const redData = platformOrder.map(id => perPlatform[id]?.red || 0);
         const yellowData = platformOrder.map(id => perPlatform[id]?.yellow || 0);

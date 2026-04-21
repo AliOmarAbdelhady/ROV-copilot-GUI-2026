@@ -5,7 +5,7 @@ const ROVCopilotMap = (() => {
     let lastThreats = [];
     let resizeBound = false;
 
-    const PLATFORM_ORDER = ['hibernia', 'sea_rose', 'terra_nova', 'hebron'];
+    const PLATFORM_ORDER = ['hibernia', 'hebron', 'sea_rose', 'terra_nova'];
     const EARTH_RADIUS_M = 6371000;
     const NM_TO_METERS = 1852;
     const GRAPH_PADDING = { top: 36, right: 84, bottom: 54, left: 78 };
