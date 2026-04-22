@@ -4,9 +4,6 @@ import math
 from datetime import datetime, timezone
 from html import escape
 
-from threat_engine import destination_point
-
-
 PDF_GRAPH_SIZE = {"width": 760, "height": 760}
 PDF_GRAPH_PADDING = {"top": 48, "right": 74, "bottom": 44, "left": 46}
 PDF_GRAPH_DEFAULT_BOUNDS = {
@@ -16,7 +13,7 @@ PDF_GRAPH_DEFAULT_BOUNDS = {
     "maxLon": -47.65,
 }
 PDF_GRAPH_TICK_STEP = 0.5
-PDF_GRAPH_TRACK_DISTANCE_NM = 240
+PDF_GRAPH_NM_PER_DEGREE = 60
 
 
 def generate_csv(results):
@@ -148,54 +145,68 @@ def _compute_pdf_graph_bounds(platforms, icebergs):
     }
 
 
+def _build_pdf_graph_metrics(bounds):
+    available_width = PDF_GRAPH_SIZE["width"] - PDF_GRAPH_PADDING["left"] - PDF_GRAPH_PADDING["right"]
+    available_height = PDF_GRAPH_SIZE["height"] - PDF_GRAPH_PADDING["top"] - PDF_GRAPH_PADDING["bottom"]
+    reference_latitude = (bounds["minLat"] + bounds["maxLat"]) / 2
+    lon_nm_per_degree = PDF_GRAPH_NM_PER_DEGREE * math.cos(math.radians(reference_latitude))
+    chart_width_nm = max((bounds["maxLon"] - bounds["minLon"]) * lon_nm_per_degree, 0.0001)
+    chart_height_nm = max((bounds["maxLat"] - bounds["minLat"]) * PDF_GRAPH_NM_PER_DEGREE, 0.0001)
+    scale = min(available_width / chart_width_nm, available_height / chart_height_nm)
+    frame_width = chart_width_nm * scale
+    frame_height = chart_height_nm * scale
+    frame_left = PDF_GRAPH_PADDING["left"] + ((available_width - frame_width) / 2)
+    frame_top = PDF_GRAPH_PADDING["top"] + ((available_height - frame_height) / 2)
+
+    return {
+        "scale": scale,
+        "frame_left": frame_left,
+        "frame_top": frame_top,
+        "frame_right": frame_left + frame_width,
+        "frame_bottom": frame_top + frame_height,
+        "frame_width": frame_width,
+        "frame_height": frame_height,
+        "lon_nm_per_degree": lon_nm_per_degree,
+    }
+
+
 def _build_report_graph_svg(platforms, icebergs):
     width = PDF_GRAPH_SIZE["width"]
     height = PDF_GRAPH_SIZE["height"]
-    plot_width = width - PDF_GRAPH_PADDING["left"] - PDF_GRAPH_PADDING["right"]
-    plot_height = height - PDF_GRAPH_PADDING["top"] - PDF_GRAPH_PADDING["bottom"]
     bounds = _compute_pdf_graph_bounds(platforms, icebergs)
+    metrics = _build_pdf_graph_metrics(bounds)
     lon_ticks = _build_graph_ticks(bounds["minLon"], bounds["maxLon"], PDF_GRAPH_TICK_STEP)
     lat_ticks = _build_graph_ticks(bounds["minLat"], bounds["maxLat"], PDF_GRAPH_TICK_STEP)
 
     def project(latitude, longitude):
         return {
-            "x": PDF_GRAPH_PADDING["left"] + (
-                (longitude - bounds["minLon"]) / (bounds["maxLon"] - bounds["minLon"])
-            ) * plot_width,
-            "y": PDF_GRAPH_PADDING["top"] + (
-                (bounds["maxLat"] - latitude) / (bounds["maxLat"] - bounds["minLat"])
-            ) * plot_height,
+            "x": metrics["frame_left"] + (
+                (longitude - bounds["minLon"]) * metrics["lon_nm_per_degree"] * metrics["scale"]
+            ),
+            "y": metrics["frame_top"] + (
+                (bounds["maxLat"] - latitude) * PDF_GRAPH_NM_PER_DEGREE * metrics["scale"]
+            ),
         }
 
     def heading_endpoint(point, iceberg):
-        ray_lat, ray_lon = destination_point(
-            iceberg["latitude"],
-            iceberg["longitude"],
-            iceberg["heading"],
-            PDF_GRAPH_TRACK_DISTANCE_NM,
-        )
-        far_point = project(ray_lat, ray_lon)
-        vector_x = far_point["x"] - point["x"]
-        vector_y = far_point["y"] - point["y"]
-        min_x = PDF_GRAPH_PADDING["left"]
-        max_x = width - PDF_GRAPH_PADDING["right"]
-        min_y = PDF_GRAPH_PADDING["top"]
-        max_y = height - PDF_GRAPH_PADDING["bottom"]
+        bearing = math.radians(iceberg["heading"])
+        vector_x = math.sin(bearing) * metrics["scale"]
+        vector_y = -math.cos(bearing) * metrics["scale"]
         candidates = []
 
         if vector_x > 0:
-            candidates.append((max_x - point["x"]) / vector_x)
+            candidates.append((metrics["frame_right"] - point["x"]) / vector_x)
         elif vector_x < 0:
-            candidates.append((min_x - point["x"]) / vector_x)
+            candidates.append((metrics["frame_left"] - point["x"]) / vector_x)
 
         if vector_y > 0:
-            candidates.append((max_y - point["y"]) / vector_y)
+            candidates.append((metrics["frame_bottom"] - point["y"]) / vector_y)
         elif vector_y < 0:
-            candidates.append((min_y - point["y"]) / vector_y)
+            candidates.append((metrics["frame_top"] - point["y"]) / vector_y)
 
         valid_candidates = [value for value in candidates if value > 0]
         if not valid_candidates:
-            return far_point
+            return {"x": point["x"] + vector_x, "y": point["y"] + vector_y}
 
         t_value = min(valid_candidates)
         return {
@@ -214,8 +225,8 @@ def _build_report_graph_svg(platforms, icebergs):
     for tick in lon_ticks:
         x_pos = project(bounds["minLat"], tick)["x"]
         svg.append(
-            f'<line x1="{x_pos:.2f}" y1="{PDF_GRAPH_PADDING["top"]}" '
-            f'x2="{x_pos:.2f}" y2="{height - PDF_GRAPH_PADDING["bottom"]}" '
+            f'<line x1="{x_pos:.2f}" y1="{metrics["frame_top"]:.2f}" '
+            f'x2="{x_pos:.2f}" y2="{metrics["frame_bottom"]:.2f}" '
             'stroke="#6b7280" stroke-width="1"/>'
         )
         svg.append(
@@ -229,8 +240,8 @@ def _build_report_graph_svg(platforms, icebergs):
         label_x = width - 16
         label_y = y_pos + 4
         svg.append(
-            f'<line x1="{PDF_GRAPH_PADDING["left"]}" y1="{y_pos:.2f}" '
-            f'x2="{width - PDF_GRAPH_PADDING["right"]}" y2="{y_pos:.2f}" '
+            f'<line x1="{metrics["frame_left"]:.2f}" y1="{y_pos:.2f}" '
+            f'x2="{metrics["frame_right"]:.2f}" y2="{y_pos:.2f}" '
             'stroke="#6b7280" stroke-width="1"/>'
         )
         svg.append(
