@@ -6,8 +6,7 @@ const ROVCopilotMap = (() => {
     let resizeBound = false;
 
     const PLATFORM_ORDER = ['hibernia', 'hebron', 'sea_rose', 'terra_nova'];
-    const EARTH_RADIUS_M = 6371000;
-    const NM_TO_METERS = 1852;
+    const NM_PER_DEGREE = 60;
     const GRAPH_PADDING = { top: 36, right: 84, bottom: 54, left: 78 };
     const DEFAULT_BOUNDS = {
         minLat: 46.2,
@@ -100,6 +99,36 @@ const ROVCopilotMap = (() => {
         };
     }
 
+    function buildProjection(bounds, width, height) {
+        const availableWidth = width - GRAPH_PADDING.left - GRAPH_PADDING.right;
+        const availableHeight = height - GRAPH_PADDING.top - GRAPH_PADDING.bottom;
+        const referenceLatitude = (bounds.minLat + bounds.maxLat) / 2;
+        const lonNmPerDegree = NM_PER_DEGREE * Math.cos((referenceLatitude * Math.PI) / 180);
+        const chartWidthNm = Math.max((bounds.maxLon - bounds.minLon) * lonNmPerDegree, 0.0001);
+        const chartHeightNm = Math.max((bounds.maxLat - bounds.minLat) * NM_PER_DEGREE, 0.0001);
+        const scale = Math.min(availableWidth / chartWidthNm, availableHeight / chartHeightNm);
+        const frameWidth = chartWidthNm * scale;
+        const frameHeight = chartHeightNm * scale;
+        const frameLeft = GRAPH_PADDING.left + ((availableWidth - frameWidth) / 2);
+        const frameTop = GRAPH_PADDING.top + ((availableHeight - frameHeight) / 2);
+
+        return {
+            scale,
+            frameLeft,
+            frameTop,
+            frameWidth,
+            frameHeight,
+            frameRight: frameLeft + frameWidth,
+            frameBottom: frameTop + frameHeight,
+            project(latitude, longitude) {
+                return {
+                    x: frameLeft + ((longitude - bounds.minLon) * lonNmPerDegree * scale),
+                    y: frameTop + ((bounds.maxLat - latitude) * NM_PER_DEGREE * scale),
+                };
+            },
+        };
+    }
+
     function buildTicks(min, max, step) {
         const ticks = [];
         const epsilon = step / 100;
@@ -133,24 +162,21 @@ const ROVCopilotMap = (() => {
         return formatCoordinate(value, axis);
     }
 
-    function destinationPoint(lat, lon, bearingDeg, distanceNm) {
-        const distance = (distanceNm * NM_TO_METERS) / EARTH_RADIUS_M;
-        const bearing = (bearingDeg * Math.PI) / 180;
-        const lat1 = (lat * Math.PI) / 180;
-        const lon1 = (lon * Math.PI) / 180;
+    function headingEndpoint(point, headingDeg, projection) {
+        const bearing = (headingDeg * Math.PI) / 180;
+        const vectorX = Math.sin(bearing) * projection.scale;
+        const vectorY = -Math.cos(bearing) * projection.scale;
+        const candidates = [];
 
-        const lat2 = Math.asin(
-            Math.sin(lat1) * Math.cos(distance) +
-            Math.cos(lat1) * Math.sin(distance) * Math.cos(bearing)
-        );
-        const lon2 = lon1 + Math.atan2(
-            Math.sin(bearing) * Math.sin(distance) * Math.cos(lat1),
-            Math.cos(distance) - Math.sin(lat1) * Math.sin(lat2)
-        );
+        if (vectorX > 0) candidates.push((projection.frameRight - point.x) / vectorX);
+        if (vectorX < 0) candidates.push((projection.frameLeft - point.x) / vectorX);
+        if (vectorY > 0) candidates.push((projection.frameBottom - point.y) / vectorY);
+        if (vectorY < 0) candidates.push((projection.frameTop - point.y) / vectorY);
 
+        const t = Math.min(...candidates.filter((value) => value > 0));
         return {
-            latitude: (lat2 * 180) / Math.PI,
-            longitude: (lon2 * 180) / Math.PI,
+            x: Number.isFinite(t) ? point.x + (vectorX * t) : point.x + vectorX,
+            y: Number.isFinite(t) ? point.y + (vectorY * t) : point.y + vectorY,
         };
     }
 
@@ -161,17 +187,12 @@ const ROVCopilotMap = (() => {
 
         const width = Math.max(container.clientWidth, 640);
         const height = Math.max(container.clientHeight, 520);
-        const plotWidth = width - GRAPH_PADDING.left - GRAPH_PADDING.right;
-        const plotHeight = height - GRAPH_PADDING.top - GRAPH_PADDING.bottom;
         const bounds = computeBounds(lastPlatforms, lastIcebergs);
+        const projection = buildProjection(bounds, width, height);
+        const { project, frameLeft, frameTop, frameWidth, frameHeight, scale } = projection;
         const lonTicks = buildTicks(bounds.minLon, bounds.maxLon, 0.5);
         const latTicks = buildTicks(bounds.minLat, bounds.maxLat, 0.5);
         const threatMap = Object.fromEntries(lastThreats.map((threat) => [threat.iceberg.id, threat]));
-
-        const project = (latitude, longitude) => ({
-            x: GRAPH_PADDING.left + ((longitude - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * plotWidth,
-            y: GRAPH_PADDING.top + ((bounds.maxLat - latitude) / (bounds.maxLat - bounds.minLat)) * plotHeight,
-        });
 
         const svg = [];
         svg.push(`<svg class="ops-graph-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Operations graph">`);
@@ -179,32 +200,26 @@ const ROVCopilotMap = (() => {
 
         lonTicks.forEach((tick) => {
             const { x } = project(bounds.minLat, tick);
-            svg.push(`<line x1="${x}" y1="${GRAPH_PADDING.top}" x2="${x}" y2="${height - GRAPH_PADDING.bottom}" class="ops-graph-grid"></line>`);
+            svg.push(`<line x1="${x}" y1="${frameTop}" x2="${x}" y2="${frameTop + frameHeight}" class="ops-graph-grid"></line>`);
             svg.push(`<text x="${x}" y="${height - 18}" text-anchor="middle" class="ops-graph-axis-label">${escapeHtml(formatAxisLabel(tick, 'lon'))}</text>`);
         });
 
         latTicks.forEach((tick) => {
             const { y } = project(tick, bounds.minLon);
-            svg.push(`<line x1="${GRAPH_PADDING.left}" y1="${y}" x2="${width - GRAPH_PADDING.right}" y2="${y}" class="ops-graph-grid"></line>`);
+            svg.push(`<line x1="${frameLeft}" y1="${y}" x2="${frameLeft + frameWidth}" y2="${y}" class="ops-graph-grid"></line>`);
             svg.push(`<text x="${width - 8}" y="${y + 4}" text-anchor="end" class="ops-graph-axis-label">${escapeHtml(formatAxisLabel(tick, 'lat'))}</text>`);
         });
 
         svg.push(
-            `<rect x="${GRAPH_PADDING.left}" y="${GRAPH_PADDING.top}" width="${plotWidth}" height="${plotHeight}" class="ops-graph-frame"></rect>`
+            `<rect x="${frameLeft}" y="${frameTop}" width="${frameWidth}" height="${frameHeight}" class="ops-graph-frame"></rect>`
         );
 
         lastPlatforms.forEach((platform) => {
             const center = project(platform.latitude, platform.longitude);
 
             RINGS.forEach((ring) => {
-                const latOffset = ring.nm / 60;
-                const lonOffset = ring.nm / (60 * Math.cos((platform.latitude * Math.PI) / 180));
-                const north = project(platform.latitude + latOffset, platform.longitude);
-                const east = project(platform.latitude, platform.longitude + lonOffset);
-                const rx = Math.abs(east.x - center.x);
-                const ry = Math.abs(north.y - center.y);
                 svg.push(
-                    `<ellipse cx="${center.x}" cy="${center.y}" rx="${rx}" ry="${ry}" stroke="${ring.stroke}" fill="${ring.fill}" stroke-dasharray="${ring.dash}" class="ops-graph-ring"></ellipse>`
+                    `<circle cx="${center.x}" cy="${center.y}" r="${ring.nm * scale}" stroke="${ring.stroke}" fill="${ring.fill}" stroke-dasharray="${ring.dash}" class="ops-graph-ring"></circle>`
                 );
             });
         });
@@ -224,24 +239,7 @@ const ROVCopilotMap = (() => {
         lastIcebergs.forEach((iceberg) => {
             const threat = threatMap[iceberg.id];
             const point = project(iceberg.latitude, iceberg.longitude);
-            const rayPointGeo = destinationPoint(iceberg.latitude, iceberg.longitude, iceberg.heading, 240);
-            const farPoint = project(rayPointGeo.latitude, rayPointGeo.longitude);
-            const vectorX = farPoint.x - point.x;
-            const vectorY = farPoint.y - point.y;
-            const minX = GRAPH_PADDING.left;
-            const maxX = width - GRAPH_PADDING.right;
-            const minY = GRAPH_PADDING.top;
-            const maxY = height - GRAPH_PADDING.bottom;
-            const candidates = [];
-
-            if (vectorX > 0) candidates.push((maxX - point.x) / vectorX);
-            if (vectorX < 0) candidates.push((minX - point.x) / vectorX);
-            if (vectorY > 0) candidates.push((maxY - point.y) / vectorY);
-            if (vectorY < 0) candidates.push((minY - point.y) / vectorY);
-
-            const t = Math.min(...candidates.filter((value) => value > 0));
-            const endX = Number.isFinite(t) ? point.x + vectorX * t : farPoint.x;
-            const endY = Number.isFinite(t) ? point.y + vectorY * t : farPoint.y;
+            const endPoint = headingEndpoint(point, iceberg.heading, projection);
             const color = threatColor(worstThreat(threat));
 
             const tooltipLines = [
@@ -263,7 +261,7 @@ const ROVCopilotMap = (() => {
             svg.push(`
                 <g>
                     <title>${escapeHtml(tooltipLines.join(' | '))}</title>
-                    <line x1="${point.x}" y1="${point.y}" x2="${endX}" y2="${endY}" stroke="${color}" stroke-width="3" stroke-linecap="round" class="ops-graph-track"></line>
+                    <line x1="${point.x}" y1="${point.y}" x2="${endPoint.x}" y2="${endPoint.y}" stroke="${color}" stroke-width="3" stroke-linecap="round" class="ops-graph-track"></line>
                     <circle cx="${point.x}" cy="${point.y}" r="7.5" fill="${color}" stroke="white" stroke-width="2.5"></circle>
                     <text x="${point.x + 12}" y="${point.y - 10}" class="ops-graph-iceberg-label">${escapeHtml(iceberg.name)}</text>
                 </g>
